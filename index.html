@@ -47,7 +47,7 @@
         </div>
         <h3 class="text-lg font-bold text-slate-800 mb-2">Formulario Cerrado</h3>
         <p id="closedTimeMsg" class="text-sm text-slate-500">Este formulario solo funciona los <strong>sabados</strong> de <strong>5:00 AM</strong> a <strong>10:08 AM</strong>.</p>
-        <p class="text-xs text-slate-400 mt-2">Horario de Colombia (UTC-5)</p>
+        <p id="scheduleText" class="text-xs text-slate-400 mt-2">Horario: 05:00 - 10:08</p>
       </div>
 
       <!-- Form -->
@@ -247,14 +247,46 @@
     const dayOfWeek = colombiaTime.getDay();
     const totalMin = colombiaTime.getHours() * 60 + colombiaTime.getMinutes();
     const isSaturday = dayOfWeek === 6;
-    const horaInicio = 5 * 60;
-    const horaFin = 10 * 60 + 8;
-    const isOpen = isSaturday && totalMin >= horaInicio && totalMin <= horaFin;
 
-    if (!isOpen) {
-      document.getElementById('confirmForm').classList.add('hidden');
-      document.getElementById('closedMsg').classList.remove('hidden');
+    let config = { activo: true, hora_inicio: '05:00', hora_fin: '10:08' };
+
+    async function loadConfig() {
+      try {
+        const { data } = await db.from('form_config').select('*').eq('tipo', 'almuerzo_adea').single();
+        if (data) {
+          config = data;
+          updateScheduleDisplay();
+          checkOpen();
+        }
+      } catch (e) {
+        console.warn('Error loading config:', e);
+      }
     }
+
+    function timeToMinutes(t) {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    }
+
+    function updateScheduleDisplay() {
+      const el = document.getElementById('scheduleText');
+      if (el) el.textContent = `Horario: ${config.hora_inicio} - ${config.hora_fin}`;
+      const closedMsg = document.getElementById('closedTimeMsg');
+      if (closedMsg) closedMsg.innerHTML = `Este formulario solo funciona los <strong>sabados</strong> de <strong>${config.hora_inicio}</strong> a <strong>${config.hora_fin}</strong>.`;
+    }
+
+    function checkOpen() {
+      const inicio = timeToMinutes(config.hora_inicio);
+      const fin = timeToMinutes(config.hora_fin);
+      const open = config.activo && isSaturday && totalMin >= inicio && totalMin <= fin;
+      if (!open) {
+        document.getElementById('confirmForm').classList.add('hidden');
+        document.getElementById('closedMsg').classList.remove('hidden');
+      }
+    }
+
+    checkOpen();
+    loadConfig();
 
     const codigoInput = document.getElementById('codigo');
     const codigoLabel = document.querySelector('label[for="codigo"]') || codigoInput.previousElementSibling;
