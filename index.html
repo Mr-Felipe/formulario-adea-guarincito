@@ -85,7 +85,7 @@
           </svg>
           Buscar mi Confirmacion
         </button>
-        <p class="text-center text-xs text-slate-400 mt-4">Sabado 5:00 AM - 10:08 AM</p>
+        <p id="formSchedule" class="text-center text-xs text-slate-400 mt-4">Sabado 5:00 AM - 10:08 AM</p>
       </div>
     </div>
   </div>
@@ -269,6 +269,8 @@
     }
 
     function updateScheduleDisplay() {
+      const el = document.getElementById('formSchedule');
+      if (el) el.textContent = `Sabado ${config.hora_inicio} - ${config.hora_fin}`;
       const closedMsg = document.getElementById('closedTimeMsg');
       if (closedMsg) closedMsg.innerHTML = `Este formulario solo funciona los <strong>sabados</strong> de <strong>${config.hora_inicio}</strong> a <strong>${config.hora_fin}</strong>.`;
     }
