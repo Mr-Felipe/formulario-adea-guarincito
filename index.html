@@ -320,7 +320,7 @@
 
       if (data) {
         const fecha = data.fecha || new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
-        showSuccess(data.id, data.codigo_id, data.nombre_en_form || data.beneficiario_nombre || '', data.carrera_en_form || data.carrera_nombre || 'ADEA', fecha);
+        showSuccess(data.id, data.codigo_id, data.nombre_en_form || '', data.carrera_en_form || 'ADEA', fecha);
         return true;
       }
 
@@ -330,7 +330,7 @@
 
     async function checkDuplicateBeforeSubmit(codigoId) {
       const { data } = await db.from('confirmaciones')
-        .select('id, nombre_en_form, beneficiario_nombre')
+        .select('id, nombre_en_form, carrera_en_form, fecha')
         .eq('codigo_id', codigoId)
         .like('fecha', getTodayPattern())
         .eq('tipo_comida_id', TIPO_COMIDA_ID)
@@ -394,7 +394,7 @@
         // Duplicate found - show existing confirmation instead of error
         localStorage.setItem(STORAGE_KEY, codigo_id);
         const fecha = existing.fecha || new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
-        showSuccess(existing.id, codigo_id, existing.nombre_en_form || existing.beneficiario_nombre || nombre, 'ADEA', fecha);
+        showSuccess(existing.id, codigo_id, existing.nombre_en_form || nombre, 'ADEA', fecha);
         resetBtn();
         return;
       }
@@ -528,7 +528,7 @@
       document.getElementById('verify-container').classList.add('hidden');
       document.getElementById('verify-valid').classList.remove('hidden');
       document.getElementById('vrCodigo').textContent = `${String(data.id).padStart(4, '0')}`;
-      document.getElementById('vrNombre').textContent = data.nombre_en_form || data.beneficiario_nombre || 'Sin nombre';
+      document.getElementById('vrNombre').textContent = data.nombre_en_form || 'Sin nombre';
       document.getElementById('vrCarrera').textContent = data.carrera_en_form || data.carrera_nombre || 'Sin carrera';
       document.getElementById('vrFecha').textContent = data.fecha || '';
     });
