@@ -345,6 +345,9 @@
     document.getElementById('confirmForm').addEventListener('submit', async (e) => {
       e.preventDefault();
 
+      // Re-fetch config to catch any changes made after page load
+      await loadConfig();
+
       // CHECK IF FORM IS STILL OPEN (handles page left open past closing time)
       if (!isFormOpen()) {
         checkOpen(); // Update UI to show closed message
