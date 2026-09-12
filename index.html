@@ -242,14 +242,21 @@
     const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRvenRjaHVicm5qbGN4cHpiaGd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzMDM1NjQsImV4cCI6MjEwMzg3OTU2NH0._dlpaCg91GX--eoBkC9kFnM_CJbmgYNQ7TapBrUHpLo';
     const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
     const TIPO_COMIDA_ID = 2;
+    const STORAGE_KEY = 'adea_confirmacion_hoy';
 
     const now = new Date();
     const colombiaTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Bogota' }));
     const dayOfWeek = colombiaTime.getDay();
     const totalMin = colombiaTime.getHours() * 60 + colombiaTime.getMinutes();
-    const isSaturday = dayOfWeek === 6;
 
-    let config = { activo: true, hora_inicio: '05:00', hora_fin: '10:08' };
+    const DIAS_MAP = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+
+    let config = { activo: true, hora_inicio: '05:00', hora_fin: '10:08', dias_activos: ['sábado'] };
+
+    function getTodayPattern() {
+      const pad = n => String(n).padStart(2, '0');
+      return `${pad(colombiaTime.getDate())}/${pad(colombiaTime.getMonth()+1)}/${colombiaTime.getFullYear()}%`;
+    }
 
     async function loadConfig() {
       try {
@@ -270,16 +277,20 @@
     }
 
     function updateScheduleDisplay() {
+      const dias = config.dias_activos?.join(', ') || 'sabados';
       const closedMsg = document.getElementById('closedTimeMsg');
-      if (closedMsg) closedMsg.innerHTML = `Este formulario solo funciona los <strong>sabados</strong>`;
+      if (closedMsg) closedMsg.innerHTML = `Este formulario solo funciona los <strong>${dias}</strong>`;
       const closedSchedule = document.getElementById('closedSchedule');
       if (closedSchedule) closedSchedule.textContent = `${config.hora_inicio} - ${config.hora_fin}`;
     }
 
     function checkOpen() {
+      if (!config.activo) return false;
+      const diaHoy = DIAS_MAP[dayOfWeek];
+      if (!config.dias_activos?.includes(diaHoy)) return false;
       const inicio = timeToMinutes(config.hora_inicio);
       const fin = timeToMinutes(config.hora_fin);
-      const open = config.activo && isSaturday && totalMin >= inicio && totalMin <= fin;
+      const open = totalMin >= inicio && totalMin <= fin;
       const form = document.getElementById('confirmForm');
       const msg = document.getElementById('closedMsg');
       if (open) {
@@ -291,8 +302,67 @@
       }
     }
 
-    checkOpen();
-    loadConfig();
+    // ============================================
+    // DUPLICATE CHECK + SHOW CONFIRMATION ON RELOAD
+    // ============================================
+    async function checkExistingConfirmation() {
+      const savedCodigo = localStorage.getItem(STORAGE_KEY);
+      if (!savedCodigo) return false;
+
+      const { data } = await db.from('confirmaciones')
+        .select('*')
+        .eq('codigo_id', savedCodigo)
+        .like('fecha', getTodayPattern())
+        .eq('tipo_comida_id', TIPO_COMIDA_ID)
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data) {
+        const fecha = data.fecha || new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
+        showSuccess(data.id, data.codigo_id, data.nombre_en_form || data.beneficiario_nombre || '', data.carrera_en_form || data.carrera_nombre || 'ADEA', fecha);
+        return true;
+      }
+
+      localStorage.removeItem(STORAGE_KEY);
+      return false;
+    }
+
+    async function checkDuplicateBeforeSubmit(codigoId) {
+      const { data } = await db.from('confirmaciones')
+        .select('id, nombre_en_form, beneficiario_nombre')
+        .eq('codigo_id', codigoId)
+        .like('fecha', getTodayPattern())
+        .eq('tipo_comida_id', TIPO_COMIDA_ID)
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      return data;
+    }
+
+    // On page load: check if user already confirmed today
+    (async () => {
+      checkOpen();
+      await loadConfig();
+      const alreadyConfirmed = await checkExistingConfirmation();
+      if (!alreadyConfirmed) {
+        // Normal flow: form is shown (or closed msg)
+      }
+    })();
+
+    // Check if form is currently open (without modifying UI)
+    function isFormOpen() {
+      const nowCheck = new Date();
+      const colombiaCheck = new Date(nowCheck.toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+      const diaHoy = DIAS_MAP[colombiaCheck.getDay()];
+      if (!config.activo) return false;
+      if (!config.dias_activos?.includes(diaHoy)) return false;
+      const currentMin = colombiaCheck.getHours() * 60 + colombiaCheck.getMinutes();
+      const inicio = timeToMinutes(config.hora_inicio);
+      const fin = timeToMinutes(config.hora_fin);
+      return currentMin >= inicio && currentMin <= fin;
+    }
 
     const codigoInput = document.getElementById('codigo');
     const codigoLabel = document.querySelector('label[for="codigo"]') || codigoInput.previousElementSibling;
@@ -302,6 +372,13 @@
 
     document.getElementById('confirmForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+
+      // CHECK IF FORM IS STILL OPEN (handles page left open past closing time)
+      if (!isFormOpen()) {
+        checkOpen(); // Update UI to show closed message
+        return;
+      }
+
       const btn = document.getElementById('submitBtn');
       btn.disabled = true;
       btn.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Enviando...';
@@ -310,6 +387,17 @@
       const nombre = document.getElementById('nombre').value.trim();
 
       if (!codigo_id || !nombre) { showError('Todos los campos son obligatorios'); resetBtn(); return; }
+
+      // CHECK DUPLICATE BEFORE SUBMIT
+      const existing = await checkDuplicateBeforeSubmit(codigo_id);
+      if (existing) {
+        // Duplicate found - show existing confirmation instead of error
+        localStorage.setItem(STORAGE_KEY, codigo_id);
+        const fecha = existing.fecha || new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
+        showSuccess(existing.id, codigo_id, existing.nombre_en_form || existing.beneficiario_nombre || nombre, 'ADEA', fecha);
+        resetBtn();
+        return;
+      }
 
       const { data: adea } = await db.from('carreras').select('id').eq('nombre', 'ADEA').single();
       if (!adea) { showError('Error al cargar carrera ADEA'); resetBtn(); return; }
@@ -321,6 +409,15 @@
 
       if (error) { showError('Error al enviar. Intenta de nuevo.'); resetBtn(); return; }
       const result = data?.[0];
+
+      if (result?.motivo_alerta === 'duplicado') {
+        // Duplicate found - show existing confirmation
+        localStorage.setItem(STORAGE_KEY, codigo_id);
+        const fecha = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
+        showSuccess(result.confirmacion_id, codigo_id, nombre, 'ADEA', fecha);
+        resetBtn();
+        return;
+      }
 
       if (result?.motivo_alerta === 'no_en_padron') {
         showError('Su codigo no fue encontrado en el padron de beneficiarios. Verifique que digito correctamente su ID.');
@@ -339,6 +436,9 @@
         resetBtn();
         return;
       }
+
+      // SAVE TO LOCALSTORAGE for reload recovery
+      localStorage.setItem(STORAGE_KEY, codigo_id);
 
       const fecha = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
       showSuccess(result.confirmacion_id, codigo_id, nombre, 'ADEA', fecha);
@@ -359,6 +459,7 @@
     function resetBtn() { const b = document.getElementById('submitBtn'); b.disabled = false; b.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg> Enviar Confirmacion'; }
     function showSuccess(id, codigo, nombre, carrera, fecha) {
       document.getElementById('form-container').classList.add('hidden');
+      document.getElementById('closedMsg').classList.add('hidden');
       document.getElementById('success-container').classList.remove('hidden');
       document.getElementById('confirmCode').textContent = String(id).padStart(4, '0');
       document.getElementById('confirmNombre').textContent = nombre;
@@ -366,10 +467,16 @@
       document.getElementById('confirmCarrera').textContent = carrera;
       document.getElementById('confirmFecha').textContent = fecha;
     }
-    function resetForm() { document.getElementById('success-container').classList.add('hidden'); document.getElementById('form-container').classList.remove('hidden'); document.getElementById('confirmForm').reset(); }
+    function resetForm() {
+      document.getElementById('success-container').classList.add('hidden');
+      document.getElementById('form-container').classList.remove('hidden');
+      document.getElementById('confirmForm').reset();
+      checkOpen();
+    }
 
     function showVerify() {
       document.getElementById('form-container').classList.add('hidden');
+      document.getElementById('closedMsg').classList.add('hidden');
       document.getElementById('success-container').classList.add('hidden');
       document.getElementById('verify-container').classList.remove('hidden');
     }
@@ -378,11 +485,13 @@
       document.getElementById('form-container').classList.remove('hidden');
       document.getElementById('verifyInput').value = '';
       document.getElementById('verifyError').classList.add('hidden');
+      checkOpen();
     }
     function hideVerifyResult() {
       document.getElementById('verify-valid').classList.add('hidden');
       document.getElementById('verify-invalid').classList.add('hidden');
       document.getElementById('form-container').classList.remove('hidden');
+      checkOpen();
     }
 
     document.getElementById('verifyForm').addEventListener('submit', async (e) => {
@@ -401,11 +510,8 @@
       btn.disabled = true;
       btn.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Buscando...';
 
-      const pad = n => String(n).padStart(2, '0');
-      const todayPattern = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}%`;
-
       const { data, error } = await db.from('confirmaciones')
-        .select('*').eq('codigo_id', input).like('fecha', todayPattern)
+        .select('*').eq('codigo_id', input).like('fecha', getTodayPattern())
         .eq('tipo_comida_id', TIPO_COMIDA_ID)
         .order('id', { ascending: false }).limit(1).maybeSingle();
 
